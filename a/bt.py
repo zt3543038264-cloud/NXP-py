@@ -1,8 +1,22 @@
-# bc_comm.py —— 蓝牙/无线串口文本协议。
-import bc_cfg as cfg
-import bc_hw as hw
+# bt.py —— 蓝牙/无线串口文本协议。没接模块时也能安全跑，写出去没人收而已。
+from machine import UART
+
+import cfg
+
+# LPUART3 = C6/C7。波特率必须和模块实际配置一致。
+uart = UART(2)
+uart.init(115200, bits=8, parity=None, stop=1)
 
 _buf = ''
+
+
+def say(text):
+    uart.write(text)
+
+
+def report(angle, target_angle, speed, pwm):
+    """遥测。数据从外面传进来，避免反过来 import balance 造成循环引用。"""
+    uart.write('%.2f %.2f %.1f %.0f\\n' % (angle, target_angle, speed, pwm))
 
 
 def poll(allow_save=False):
@@ -15,10 +29,10 @@ def poll(allow_save=False):
         X            远程停车
     """
     global _buf
-    n = hw.uart.any()
+    n = uart.any()
     if n:
         try:
-            _buf += hw.uart.read(n).decode()
+            _buf += uart.read(n).decode()
         except Exception:
             _buf = ''
             return None
@@ -38,15 +52,15 @@ def poll(allow_save=False):
 
     if line == '?':
         for k in sorted(cfg.P):
-            hw.uart.write('%s=%s\\n' % (k, cfg.P[k]))
+            uart.write('%s=%s\\n' % (k, cfg.P[k]))
         return None
 
     if line == 'S':
         if allow_save:
             cfg.save_params()
-            hw.uart.write('saved\\n')
+            uart.write('saved\\n')
         else:
-            hw.uart.write('busy: stop the car first\\n')
+            uart.write('busy: stop the car first\\n')
         return None
 
     if '=' in line:
@@ -57,17 +71,7 @@ def poll(allow_save=False):
         except ValueError:
             ok = False
         if ok:
-            hw.uart.write('ok %s=%s\\n' % (k, cfg.P[k]))
+            uart.write('ok %s=%s\\n' % (k, cfg.P[k]))
         else:
-            hw.uart.write('reject %s\\n' % line)
+            uart.write('reject %s\\n' % line)
     return None
-
-
-def report(angle, target_angle, speed, pwm):
-    """遥测。数据从外面传进来，避免和 bc_ctrl 循环引用。"""
-    hw.uart.write('%.2f %.2f %.1f %.0f\\n' %
-                  (angle, target_angle, speed, pwm))
-
-
-def say(text):
-    hw.uart.write(text)

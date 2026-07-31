@@ -1,4 +1,4 @@
-# bc_cfg.py —— 常量与参数。不依赖任何硬件，可以单独 import 测试。
+# cfg.py —— 参数与常量。不碰任何硬件，可以单独 import 测试。
 import os
 
 # ---- 硬件常量（实测得出，不要改） ----
@@ -53,6 +53,14 @@ MID_ANGLE = BAL_KP = BAL_KD = SPD_KP = SPD_KI = 0.0
 TARGET_SPEED = FIRST_ANGLE_OUT = ANGLE_OFFSET_LIMIT = MIN_ANGLE = 0.0
 ANGLE_LIMIT = 40.0
 DUTY_LIMIT = ENC_LIMIT = GYRO_DEAD = MOTOR_SIGN = 0
+
+
+def clamp(v, lo, hi):
+    if v < lo:
+        return lo
+    if v > hi:
+        return hi
+    return v
 
 
 def apply_params():
