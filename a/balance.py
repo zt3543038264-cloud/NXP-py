@@ -9,6 +9,7 @@ import key
 import motor
 import tick
 import bt
+import lcd
 
 speed_i      = 0.0
 speed_out    = 0.0
@@ -94,6 +95,7 @@ def run():
             if bt_div >= 5:
                 bt_div = 0
                 bt.report(imu.angle, target_angle, enc.speed, basic_pwm)
+                lcd.show_run(imu.angle, target_angle, enc.speed, basic_pwm)
 
             gc.collect()
 
@@ -121,6 +123,7 @@ def main():
                 bt.poll(allow_save=True)     # 只有 idle 时允许写 Flash
                 if time.ticks_diff(time.ticks_ms(), t0) > 500:
                     t0 = time.ticks_ms()
+                    lcd.show_idle(imu.angle)
                     print('ang=%6.2f' % imu.angle)
                     bt.say('ang=%.2f\\n' % imu.angle)
                 time.sleep_ms(5)
@@ -131,7 +134,9 @@ def main():
 
             print('running.')
             code = run()
-            print('exit: %d  %s' % (code, cfg.EXIT_MSG.get(code, '?')))
+            msg = cfg.EXIT_MSG.get(code, '?')
+            lcd.show_exit(code, msg)
+            print('exit: %d  %s' % (code, msg))
             key.clear()
             time.sleep_ms(500)
     except KeyboardInterrupt:

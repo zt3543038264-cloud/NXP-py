@@ -3,9 +3,11 @@ from seekfree import MOTOR_CONTROLLER
 
 import cfg
 
-L = MOTOR_CONTROLLER(MOTOR_CONTROLLER.PWM_D4_DIR_D5, 5000,
+# 实际接线：C30/C31 和 C28/C29。哪组是左轮还没验证，
+# 跑 motor.test() 时看“LEFT”那一秒到底是哪个轮子在转，反了就把下面两行对调。
+L = MOTOR_CONTROLLER(MOTOR_CONTROLLER.PWM_C30_DIR_C31, 5000,
                      duty=0, invert=False)
-R = MOTOR_CONTROLLER(MOTOR_CONTROLLER.PWM_D6_DIR_D7, 5000,
+R = MOTOR_CONTROLLER(MOTOR_CONTROLLER.PWM_C28_DIR_C29, 5000,
                      duty=0, invert=False)
 
 
@@ -22,15 +24,22 @@ def drive(l, r):
     R.duty(int(cfg.clamp(r, -lim, lim)) * s)
 
 
-def test(duty=2000, ms=1000):
-    """调参第 1 步：轮子离地，左右轮各转一秒，看方向。"""
+def test(duty=800, ms=1000):
+    """调参第 1 步：轮子离地，左右轮各转一秒，看方向。
+
+    800 是满量程（±10000）的 8%。不转先往上加，不要直接往下降——
+    低于死区时电机只响不转，堵转电流会把驱动烤热。
+    """
     import time
-    print('LEFT  forward?')
-    L.duty(duty)
-    time.sleep_ms(ms)
-    L.duty(0)
-    time.sleep_ms(500)
-    print('RIGHT forward?')
-    R.duty(duty)
-    time.sleep_ms(ms)
-    R.duty(0)
+    try:
+        print('L (C30/C31) turning now')
+        L.duty(duty)
+        time.sleep_ms(ms)
+        L.duty(0)
+        time.sleep_ms(500)
+        print('R (C28/C29) turning now')
+        R.duty(duty)
+        time.sleep_ms(ms)
+        R.duty(0)
+    finally:
+        stop()      # Ctrl+C 或任何异常都保证归零

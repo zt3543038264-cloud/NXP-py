@@ -17,4 +17,4 @@ def reload():
 
 
 print('main()   setp("BAL_KP", 260)   showp()   reload()')
-print('probe:   import key; key.test()   /   import motor; motor.test()')
+print('probe:   key.test()  motor.test()  enc.test()  lcd.test()  bt.test()')

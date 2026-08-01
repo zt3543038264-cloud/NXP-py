@@ -1,10 +1,12 @@
-# key.py —— 按键。下标映射还没实测，测出来只改 START / STOP 两行。
+# key.py —— 按键。参数是扫描周期 (ms)，必须等于 ticker 周期。
 from seekfree import KEY_HANDLER
 
 dev = KEY_HANDLER(5)
 
-START = 0        # KEY1  ← 待实测确认
-STOP  = 1        # KEY2  ← 待实测确认
+# 已实测 2026-07-31：KEY1~KEY4 对应下标 0~3，按下为 1，自动回 0。
+# get() 返回 6 个元素，后两个恒为 0，不用管。
+START = 0        # KEY1
+STOP  = 1        # KEY2
 
 
 def pressed(idx):

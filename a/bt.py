@@ -14,6 +14,22 @@ def say(text):
     uart.write(text)
 
 
+def test(baud=None):
+    """接上模块后先跑这个。手机串口 App 应每 0.5 s 收到一行，
+    发回来的任何内容会打印在 REPL。波特率对不上就是一堆乱码。
+    例：bt.test(9600)
+    """
+    import time
+    if baud:
+        uart.init(baud, bits=8, parity=None, stop=1)
+    for i in range(20):
+        uart.write('bt ok %d\n' % i)
+        n = uart.any()
+        if n:
+            print('rx:', uart.read(n))
+        time.sleep_ms(500)
+
+
 def report(angle, target_angle, speed, pwm):
     """遥测。数据从外面传进来，避免反过来 import balance 造成循环引用。"""
     uart.write('%.2f %.2f %.1f %.0f\\n' % (angle, target_angle, speed, pwm))
