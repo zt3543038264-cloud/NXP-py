@@ -11,9 +11,10 @@ rst = Pin('B31', Pin.OUT, value=True)
 dc  = Pin('B5',  Pin.OUT, value=True)
 blk = Pin('C21', Pin.OUT, value=True)
 
-# SPI_INDEX=3 → LPSPI4（CLK B18 / MOSI B20），不是官方例程的 2。
-# 原因：本核心板 B28（LPSPI3 的 SCK）损坏，恒低 0.2V，飞线改走 B18/B20。
-drv = LCD_Drv(SPI_INDEX=3, BAUDRATE=60_000_000,
+# SPI_INDEX=2 → LPSPI3（CLK B28 / MOSI B30），与官方例程 E5_01 一致。
+# 2026-08-01：上一块核心板 B28（LPSPI3 的 SCK）恒低 0.2V，曾临时飞线走 B18/B20 用 SPI_INDEX=3；
+# 更换核心板后已恢复原配置。若哪天又白屏，先跑 pintog.py 量电平，别再猜协议参数。
+drv = LCD_Drv(SPI_INDEX=2, BAUDRATE=60_000_000,
               DC_PIN=dc, RST_PIN=rst, LCD_TYPE=LCD_Drv.LCD200_TYPE)
 dev = LCD(drv)
 dev.color(0xFFFF, 0x0000)

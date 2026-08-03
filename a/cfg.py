@@ -9,8 +9,12 @@ K_FILTER = 0.98            # 互补滤波系数
 
 PARAM_FILE = '/flash/pid.txt'
 
+# 不写反斜杠转义，避免复制时被改坏（见下方 2026-08-03 的存盘 bug）。
+NL = chr(10)
+BS = chr(92)      # 反斜杠本人，修复旧的坏文件时要用
+
 DEFAULTS = {
-    'MID_ANGLE': 0.0,           # 机械零点 (deg)  ← 必须实测
+    'MID_ANGLE': -4.6,          # 机械零点 (deg)  2026-08-03 实测
     'BAL_KP': 200.0,            # 直立环 P
     'BAL_KD': 5.0,              # 直立环 D
     'SPD_KP': 0.0,              # 速度环 P
@@ -21,7 +25,7 @@ DEFAULTS = {
     'MIN_ANGLE': -8.0,          # 目标角下限
     'ANGLE_LIMIT': 40.0,        # 倒地保护角
     'DUTY_LIMIT': 8000.0,       # 占空比限幅
-    'ENC_LIMIT': 2300.0,        # 飞车保护
+    'ENC_LIMIT': 1500.0,        # 飞车保护（2026-08-03 实测定：空转 duty1500 约 585/20ms）
     'GYRO_DEAD': 0.0,           # 陀螺死区 (LSB)
     'MOTOR_SIGN': 1.0,          # 整体极性
 }
@@ -91,21 +95,28 @@ def load_params():
         apply_params()
         return
     with f:
-        for line in f:
-            line = line.strip()
-            if not line or line[0] == '#' or '=' not in line:
-                continue
-            k, v = line.split('=', 1)
-            k = k.strip()
-            if k not in P:
-                print('unknown key skipped:', k)
-                continue
-            try:
-                P[k] = float(v)
-            except ValueError:
-                print('bad line skipped:', line)
+        text = f.read()
+
+    # 兼容旧的坏文件：把字面的反斜杠+n 也当换行。
+    # 旧版 save_params() 把整个文件写成了一行，不补这句就永远读不回来。
+    n = 0
+    text = text.replace(BS + 'n', NL).replace(chr(13), NL)
+    for line in text.split(NL):
+        line = line.strip()
+        if not line or line[0] == '#' or '=' not in line:
+            continue
+        k, v = line.split('=', 1)
+        k = k.strip()
+        if k not in P:
+            print('unknown key skipped:', k)
+            continue
+        try:
+            P[k] = float(v)
+            n += 1
+        except ValueError:
+            print('bad line skipped:', line)
     apply_params()
-    print('params loaded from', PARAM_FILE)
+    print('loaded %d params from %s' % (n, PARAM_FILE))
 
 
 def save_params():
@@ -113,7 +124,7 @@ def save_params():
     tmp = PARAM_FILE + '.tmp'
     with open(tmp, 'w') as f:
         for k in sorted(P):
-            f.write('%s=%s\\n' % (k, P[k]))
+            f.write('%s=%s' % (k, P[k]) + NL)
     try:
         os.remove(PARAM_FILE)
     except OSError:

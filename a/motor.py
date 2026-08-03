@@ -3,12 +3,13 @@ from seekfree import MOTOR_CONTROLLER
 
 import cfg
 
-# 实际接线：C30/C31 和 C28/C29。哪组是左轮还没验证，
-# 跑 motor.test() 时看“LEFT”那一秒到底是哪个轮子在转，反了就把下面两行对调。
-L = MOTOR_CONTROLLER(MOTOR_CONTROLLER.PWM_C30_DIR_C31, 5000,
+# 2026-08-02 改接：驱动模块现在插官方学习板的 3/4 号座，D4/D5 和 D6/D7。
+# 哪组是左轮还没验证，跑 motor.test() 时看第一秒到底是哪个轮子在转，
+# 反了就把下面两行对调。
+L = MOTOR_CONTROLLER(MOTOR_CONTROLLER.PWM_D6_DIR_D7, 5000,
                      duty=0, invert=False)
-R = MOTOR_CONTROLLER(MOTOR_CONTROLLER.PWM_C28_DIR_C29, 5000,
-                     duty=0, invert=False)
+R = MOTOR_CONTROLLER(MOTOR_CONTROLLER.PWM_D4_DIR_D5, 5000,
+                     duty=0, invert=True)
 
 
 def stop():
@@ -32,12 +33,12 @@ def test(duty=800, ms=1000):
     """
     import time
     try:
-        print('L (C30/C31) turning now')
+        print('L (D4/D5) turning now 800')
         L.duty(duty)
         time.sleep_ms(ms)
         L.duty(0)
         time.sleep_ms(500)
-        print('R (C28/C29) turning now')
+        print('R (D6/D7) turning now 800')
         R.duty(duty)
         time.sleep_ms(ms)
         R.duty(0)
