@@ -63,11 +63,14 @@ def _pump():
 HOLD_GAP     = 50    # 连续多少 ms 读到全 0 才算真的松手
 REPEAT_FIRST = 500   # 按住多久开始连发
 REPEAT_GAP   = 200   # 连发间隔
+MIN_GAP      = 120   # 两次有效动作的最小间隔，兜底用
+STUCK_MS     = 3000  # 连续报同一个键超过这么久就强制重置状态
 
 _down  = False       # 当前是否处于“按住”状态
 _t_up  = 0           # 最近一次读到非 0 的时刻
 _t_dn  = 0           # 本次按下的起点
 _t_rep = 0           # 上一次连发的时刻
+_t_act = 0           # 上一次真正响应的时刻
 
 
 def _hit():
@@ -77,7 +80,7 @@ def _hit():
     直接拿 `if v[i]` 当按键事件是错的：主循环 2 ms 一圈，手指再快也要
     按住 ≈100 ms，一下会被当成几十次，光标直接飞出去。
     """
-    global _down, _t_up, _t_dn, _t_rep
+    global _down, _t_up, _t_dn, _t_rep, _t_act
     v = key.dev.get()
     idx = -1
     for i in range(4):
@@ -94,20 +97,32 @@ def _hit():
         return -1
 
     _t_up = now
-    key.clear()
 
+    # 卡死保护：万一 KEY_HANDLER 一直报同一个键，不能让整个菜单锁死
+    if _down and time.ticks_diff(now, _t_dn) > STUCK_MS:
+        _down = False
+
+    act = False
     if not _down:                       # 边沿：唯一会立即响应的路径
         _down = True
         _t_dn = now
         _t_rep = now
-        return idx
-
-    if (time.ticks_diff(now, _t_dn) > REPEAT_FIRST
+        act = True
+    elif (time.ticks_diff(now, _t_dn) > REPEAT_FIRST
             and time.ticks_diff(now, _t_rep) > REPEAT_GAP):
         _t_rep = now
-        return idx
+        act = True
 
-    return -1
+    if not act:
+        return -1
+    if time.ticks_diff(now, _t_act) < MIN_GAP:
+        return -1
+
+    _t_act = now
+    # 只在真正响应的那一下清一次。之前每 2 ms 就 clear() 一次，
+    # 会不断打断固件 5 ms 扫描的消抖状态机，反而丢按键。
+    key.clear()
+    return idx
 
 
 def _wait_ms(ms):
@@ -133,19 +148,22 @@ def _bump(name, d):
 
 
 def _go():
-    """发车。倒数 3 秒，期间 KEY4 可以取消。"""
+    """发车。倒数 3 秒，期间 KEY4 或蓝牙 X 都可以取消。"""
     _blank()
-    _row(1, 'K4 = cancel')
+    bt.want = None
+    _row(1, 'K4 or BT X = cancel')
     for n in (3, 2, 1):
         _row(0, 'START in %d' % n)
         t = time.ticks_ms()
         while time.ticks_diff(time.ticks_ms(), t) < 1000:
             _pump()
-            if _hit() == BACK:
+            if _hit() == BACK or bt.want == 'stop':
+                bt.want = None
                 _toast('canceled')
                 return
             time.sleep_ms(2)
     key.clear()
+    bt.want = None              # 倒计时里积压的命令一律作废
     _blank()
 
     code = balance.run()        # 阻塞：倒地 / KEY2 / 飞车 / 远程 X 才返回
@@ -155,10 +173,13 @@ def _go():
     _blank()
     _row(0, 'EXIT %d' % code)
     _row(1, cfg.EXIT_MSG.get(code, '?'))
-    _row(3, 'any key to return')
+    _row(3, 'any key or BT to return')
     while _hit() < 0:
         _pump()
+        if bt.want:             # 脱机时手边可能根本没人按键
+            break
         time.sleep_ms(5)
+    bt.want = None
     key.clear()
 
 
@@ -262,11 +283,21 @@ def _defaults():
 
 def _page_main():
     _blank()
+    bt.want = None              # 丢掉进菜单之前积压的命令
     sel = 0
     shown = -1                  # 已经画在屏上的光标位置
     t0 = 0
     while True:
         _pump()
+
+        if bt.want == 'go':     # 蓝牙发车，等同选中第一项按 KEY3
+            bt.want = None
+            _go()
+            _blank()
+            shown = -1
+        elif bt.want:
+            bt.want = None      # 菜单里收到 stop 之类，吃掉即可
+
         k = _hit()
         if k == UP:
             sel = (sel - 1) % len(MAIN)

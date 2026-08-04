@@ -19,6 +19,10 @@ IDLE_MS = 150      # 最后一个字节之后静默这么久，就当一条命�
 _buf = ''
 _t_rx = 0
 
+# 由使用方消费后必须清空。用模块级变量而不是只靠 poll() 的返回值，
+# 是因为菜单的 _pump() 会丢弃返回值，而 balance.run() 只关心 'stop'。
+want = None
+
 
 def say(text):
     uart.write(text)
@@ -46,8 +50,17 @@ def report(angle, target_angle, speed, pwm):
 
 
 def _run_cmd(line, allow_save):
+    global want
+
     if line == 'X':
+        want = 'stop'
+        uart.write('stopping' + NL)
         return 'stop'
+
+    if line == 'G':          # 发车。等同菜单里按 KEY1，照旧有 3 秒倒计时
+        want = 'go'
+        uart.write('go' + NL)
+        return 'go'
 
     if line == '?':
         for k in sorted(cfg.P):
