@@ -1,4 +1,4 @@
-# lcd.py —— IPS200-SPI 屏幕。只负责显示，不参与控制。
+# 管理 LCD 初始化及运行状态显示。
 from machine import Pin
 from display import LCD_Drv, LCD
 
@@ -11,9 +11,6 @@ rst = Pin('B31', Pin.OUT, value=True)
 dc  = Pin('B5',  Pin.OUT, value=True)
 blk = Pin('C21', Pin.OUT, value=True)
 
-# SPI_INDEX=2 → LPSPI3（CLK B28 / MOSI B30），与官方例程 E5_01 一致。
-# 2026-08-01：上一块核心板 B28（LPSPI3 的 SCK）恒低 0.2V，曾临时飞线走 B18/B20 用 SPI_INDEX=3；
-# 更换核心板后已恢复原配置。若哪天又白屏，先跑 pintog.py 量电平，别再猜协议参数。
 drv = LCD_Drv(SPI_INDEX=2, BAUDRATE=60_000_000,
               DC_PIN=dc, RST_PIN=rst, LCD_TYPE=LCD_Drv.LCD200_TYPE)
 dev = LCD(drv)
@@ -21,16 +18,16 @@ dev.color(0xFFFF, 0x0000)
 dev.mode(2)                 # 0竖 1横 2竖180° 3横180°，装反了改这里
 dev.clear()
 
+VER = '0807k'
+
 _last = ['', '', '', '', '']
 
-
 def _line(row, text):
-    """只在内容变了才重画。这是整个模块最重要的一行。"""
+    """只在内容变了才重画。"""
     if _last[row] == text:
         return
     _last[row] = text
     dev.str16(0, row * 20, '%-26s' % text, 0xFFFF)
-
 
 def show_idle(angle):
     _line(0, 'IDLE  KEY1=start')
@@ -39,14 +36,16 @@ def show_idle(angle):
     _line(3, 'mid %.2f' % cfg.MID_ANGLE)
     _line(4, '')
 
-
-def show_run(angle, target, speed, pwm):
-    _line(0, 'RUN')
+def show_run(angle, target, err, pwm, lost=0):
+    """第三栏是 CCD 偏差（像素），不是速度——编码器坏了之后换的。"""
+    if lost:
+        _line(0, 'RUN  LOST %d' % lost)
+    else:
+        _line(0, 'RUN')
     _line(1, 'ang %7.2f' % angle)
     _line(2, 'tgt %7.2f' % target)
-    _line(3, 'spd %7.1f' % speed)
+    _line(3, 'err %7.1f' % err)
     _line(4, 'pwm %7.0f' % pwm)
-
 
 def show_exit(code, msg):
     _line(0, 'EXIT %d' % code)
@@ -54,7 +53,6 @@ def show_exit(code, msg):
     _line(2, '')
     _line(3, '')
     _line(4, '')
-
 
 def test():
     """能看到字就说明引脚和 SPI 都对。"""

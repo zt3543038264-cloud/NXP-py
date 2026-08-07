@@ -1,5 +1,4 @@
-# menu.py —— 屏幕四键菜单。发车、改参数、看传感器都在这里。
-# 依赖方向：menu -> balance -> 其他外设。没有人 import menu，不会成环。
+# 四键屏幕菜单：发车、调参、标定和保存配置。
 import time
 
 import cfg
@@ -12,9 +11,11 @@ import bt
 import lcd
 import balance
 
+VER = '0807k'
+
 UP, DOWN, OK, BACK = 0, 1, 2, 3      # KEY1 ~ KEY4
 
-ROW_H = 16          # str16 字高。240x320 屏最多 20 行、每行 30 字
+ROW_H = 16
 VIS   = 12          # 参数页一屏显示几个参数
 
 _shadow = ['~'] * 20
@@ -22,14 +23,23 @@ _shadow = ['~'] * 20
 MAIN = ('START  balance', 'PID params', 'IMU calibrate',
         'save to flash', 'load defaults')
 
-# 调参顺序按「用到的先后」排，不是字母序
-ORDER = ('MID_ANGLE', 'BAL_KP', 'BAL_KD', 'SPD_KP', 'SPD_KI',
-         'TARGET_SPEED', 'FIRST_ANGLE_OUT', 'ANGLE_OFFSET_LIMIT',
+ORDER = ('MID_ANGLE', 'BAL_KP', 'BAL_KD',
+         'ANG_KP', 'RATE_KP', 'RATE_KI', 'RATE_LIMIT', 'RATE_I_LIMIT',
+         'TARGET_SPEED', 'SPD_KP', 'SPD_KI', 'SPD_I_LIMIT',
+         'SPD_SLOW', 'MIN_SPEED', 'SPD_DEC_STEP', 'SPD_BRAKE_STEP',
+         'TURN_KP', 'TURN_KD', 'YAW_HP', 'CROSS_MAX_N',
+         'TURN_LIMIT', 'FAR_WEIGHT',
+         'CCD_LOST_MAX',
+         'CCD_STOP_MAX', 'ZEBRA_STOP_N', 'ZEBRA_BLIND_MS',
+         'ZEBRA_STOP_DELAY_MS', 'DARK_STOP_N',
+         'RAMP_FAR_W', 'RAMP_LEAN', 'RAMP_MS', 'RAMP_N',
+         'SPD_CAP', 'SPD_BRAKE',
+         'TURN_SLOW', 'MIN_LEAN', 'DEAD_DUTY',
+         'FIRST_ANGLE_OUT', 'ANGLE_OFFSET_LIMIT',
          'MIN_ANGLE', 'ANGLE_LIMIT', 'DUTY_LIMIT', 'ENC_LIMIT',
          'GYRO_DEAD', 'MOTOR_SIGN')
 
-STEPS = (0.01, 0.1, 1.0, 10.0, 100.0)
-
+STEPS = (0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0)
 
 def _row(i, text):
     """只在内容变了才重画，和 lcd.py 里的 _line 一个道理。"""
@@ -38,16 +48,13 @@ def _row(i, text):
     _shadow[i] = text
     lcd.dev.str16(0, i * ROW_H, '%-30s' % text, 0xFFFF)
 
-
 def _blank():
-    """切页时清屏。必须同时作废 lcd.py 自己的行缓存，
-    否则两套缓存会互相欺骗：屏幕已经被清空，缓存却以为字还在。"""
+    """切页时清屏。"""
     lcd.dev.clear()
     for i in range(20):
         _shadow[i] = '~'
     for i in range(5):
         lcd._last[i] = '~'
-
 
 def _pump():
     """菜单里也要处理 ticker 标志，否则角度不刷新、蓝牙不响应。"""
@@ -58,7 +65,6 @@ def _pump():
         tick.flag20 = False
         enc.update()
         bt.poll(allow_save=True)     # 菜单里等同 idle，允许远程存盘
-
 
 HOLD_GAP     = 50    # 连续多少 ms 读到全 0 才算真的松手
 REPEAT_FIRST = 500   # 按住多久开始连发
@@ -72,14 +78,8 @@ _t_dn  = 0           # 本次按下的起点
 _t_rep = 0           # 上一次连发的时刻
 _t_act = 0           # 上一次真正响应的时刻
 
-
 def _hit():
-    """返回本次应该响应的键下标，没有则返回 -1。
-
-    只在 0 -> 1 边沿响应一次，按住不放 0.5 s 后每 0.2 s 连发。
-    直接拿 `if v[i]` 当按键事件是错的：主循环 2 ms 一圈，手指再快也要
-    按住 ≈100 ms，一下会被当成几十次，光标直接飞出去。
-    """
+    """返回本次应该响应的键下标，没有则返回 -1。"""
     global _down, _t_up, _t_dn, _t_rep, _t_act
     v = key.dev.get()
     idx = -1
@@ -90,15 +90,12 @@ def _hit():
     now = time.ticks_ms()
 
     if idx < 0:
-        # 按住期间也可能间歇读到 0（扫描相位 + clear 的竞争），
-        # 所以要连续 HOLD_GAP 内都是 0 才能判定为松手。
         if _down and time.ticks_diff(now, _t_up) > HOLD_GAP:
             _down = False
         return -1
 
     _t_up = now
 
-    # 卡死保护：万一 KEY_HANDLER 一直报同一个键，不能让整个菜单锁死
     if _down and time.ticks_diff(now, _t_dn) > STUCK_MS:
         _down = False
 
@@ -119,18 +116,14 @@ def _hit():
         return -1
 
     _t_act = now
-    # 只在真正响应的那一下清一次。之前每 2 ms 就 clear() 一次，
-    # 会不断打断固件 5 ms 扫描的消抖状态机，反而丢按键。
     key.clear()
     return idx
-
 
 def _wait_ms(ms):
     t = time.ticks_ms()
     while time.ticks_diff(time.ticks_ms(), t) < ms:
         _pump()
         time.sleep_ms(2)
-
 
 def _toast(line1, line2='', ms=900):
     _blank()
@@ -139,16 +132,13 @@ def _toast(line1, line2='', ms=900):
     _wait_ms(ms)
     _blank()
 
-
 def _bump(name, d):
-    """改参数只改内存，不写 Flash——和蓝牙调参同一个规矩。
-    先夹到 LIMITS 范围内再 setp，所以永远不会被 reject。"""
+    """改参数只改内存，不写 Flash——和蓝牙调参同一个规矩。"""
     lo, hi = cfg.LIMITS[name]
     cfg.setp(name, cfg.clamp(cfg.P[name] + d, lo, hi), save=False)
 
-
 def _go():
-    """发车。倒数 3 秒，期间 KEY4 或蓝牙 X 都可以取消。"""
+    """发车。"""
     _blank()
     bt.want = None
     _row(1, 'K4 or BT X = cancel')
@@ -166,7 +156,27 @@ def _go():
     bt.want = None              # 倒计时里积压的命令一律作废
     _blank()
 
-    code = balance.run()        # 阻塞：倒地 / KEY2 / 飞车 / 远程 X 才返回
+    try:
+        code = balance.run()
+    except Exception as e:
+        motor.stop()
+        name = type(e).__name__
+        text = str(e)
+        print('RUN CRASHED:', name, text)
+        bt.say('crash %s %s' % (name, text) + cfg.NL)
+        _blank()
+        _row(0, 'RUN CRASHED')
+        _row(1, name)
+        _row(3, text[:28])
+        _row(4, text[28:56])
+        _row(6, 'REPL has traceback')
+        _row(8, 'any key to return')
+        while _hit() < 0:
+            _pump()
+            time.sleep_ms(5)
+        key.clear()
+        _blank()
+        return
 
     motor.stop()
     key.clear()
@@ -182,12 +192,11 @@ def _go():
     bt.want = None
     key.clear()
 
-
 def _page_param():
     _blank()
     sel = 0
     top = 0
-    si = 2                      # 默认步长 1.0
+    si = 4
     editing = False
     dirty = True
     while True:
@@ -239,7 +248,7 @@ def _page_param():
                     mark = '*'
                 else:
                     mark = '>'
-                _row(2 + i, '%s%-19s%8.2f' % (mark, nm, cfg.P[nm]))
+                _row(2 + i, '%s%-19s%10.4f' % (mark, nm, cfg.P[nm]))
             if editing:
                 _row(15, 'K1 +      K2 -')
                 _row(16, 'K3 step   K4 done')
@@ -249,9 +258,8 @@ def _page_param():
             _row(18, 'ram only, save on main')
         time.sleep_ms(2)
 
-
 def _recal():
-    """重新标定陀螺零偏。标定用的是 read()，先把 ticker 停掉别抢采集。"""
+    """重新标定陀螺零偏。"""
     _blank()
     _row(0, 'keep the car still')
     _row(1, 'calibrating ...')
@@ -260,7 +268,6 @@ def _recal():
     tick.start()
     key.clear()
     _toast('bias %.2f' % imu.gy_bias, 'ang  %.2f' % imu.angle, 1500)
-
 
 def _defaults():
     _blank()
@@ -279,7 +286,6 @@ def _defaults():
             _toast('canceled')
             return
         time.sleep_ms(5)
-
 
 def _page_main():
     _blank()
@@ -317,9 +323,7 @@ def _page_main():
                 _defaults()
             _blank()
             shown = -1          # _blank() 后缓存已作废，强制重画菜单行
-        # KEY4 在主菜单不做事，防止误触退出
 
-        # 菜单行只在光标动了才重排，和实时数据分开，先保证按键跟手
         if sel != shown:
             shown = sel
             _row(0, '== MAIN MENU ==')
@@ -331,7 +335,6 @@ def _page_main():
             _row(14, 'K1 up     K2 down')
             _row(15, 'K3 enter')
 
-        # 首页就是仪表盘：第 3 步读机械零点、第 2 步看推车计数都看这里
         if time.ticks_diff(time.ticks_ms(), t0) > 150:
             t0 = time.ticks_ms()
             _row(8,  'ang  %8.2f deg' % imu.angle)
@@ -340,7 +343,6 @@ def _page_main():
             _row(11, 'encR %8d' % enc.right)
             _row(12, 'spd  %8.1f' % enc.speed)
         time.sleep_ms(2)
-
 
 def main():
     cfg.load_params()
