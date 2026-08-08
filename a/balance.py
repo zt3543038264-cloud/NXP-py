@@ -12,7 +12,7 @@ import bt
 import lcd
 import ccd
 
-VER = '0807k'
+VER = '0807u'
 
 speed_i      = 0.0
 speed_out    = 0.0
@@ -46,6 +46,7 @@ def run():
     ccd.reset()          # 清掉上一轮的斑马线计数，忘了这句下一轮一发车就停
     enc.reset()          # 不 reset 的话第一拍差分是上次停车到现在的累计值
     tick.flag5 = False
+    tick.flag10 = False
     tick.flag20 = False
 
     start_ms = time.ticks_ms()
@@ -55,7 +56,14 @@ def run():
     dark_n = 0           # 连续多少帧画面发黑
     ramp_t0 = None       # 进坡道的时刻，None = 不在坡上
     ramp_n = 0           # 连续多少帧看到坡道特征
-    cross_n = 0          # 连续多少帧处于 K_OPEN（大开口）状态
+    cross_n = 0          # 连续多少个20 ms状态拍处于 K_OPEN
+    cross_too_long = False
+    curve_n = 0          # 刹车保持计数，防止弯中误差瞬时变小就松刹
+    braking = False      # 本拍是否处于入弯刹车
+    boost_prev = False   # 用来识别冲坡刚结束的那一拍
+    boost_done = False   # 达到速度后锁定退出，防止在时间窗内反复进入
+    boost_out = 0.0      # 当前实际使用的负方向冲坡倾角，带斜坡变化
+    boosting = False
     spd_target = 0.0     # 遥测显示的平滑目标速度
     spd_cmd = 0.0        # 真正送入 PI 的目标；直道慢升、入弯快降
 
@@ -91,11 +99,30 @@ def run():
             turn_pwm = cfg.clamp(turn_pwm, -cfg.TURN_LIMIT, cfg.TURN_LIMIT)
             motor.drive(basic_pwm - turn_pwm, basic_pwm + turn_pwm)
 
-        # ---- 20 ms：CCD + 速度环 ----
+        # ---- 10 ms：CCD采集与循迹误差（100 Hz） ----
+        # CCD独立提频；编码器、速度PI和所有帧数计数仍保持20 ms，
+        # 因此0807k已经调好的速度量纲和停车时间都不会改变。
+        if tick.flag10:
+            tick.flag10 = False
+            ccd.update()
+
+            if ccd.near_kind == ccd.K_OPEN and not cross_too_long:
+                ccd_err = 0.0
+            elif ccd.near_ok:
+                if ccd.far_ok:
+                    ccd_err = ((ccd.near_err + cfg.FAR_WEIGHT * ccd.far_err)
+                               / (1.0 + cfg.FAR_WEIGHT))
+                else:
+                    ccd_err = ccd.near_err
+            else:
+                # 原来每20 ms乘0.6；现在每10 ms乘0.78，
+                # 两拍0.78^2约等于0.61，时间衰减速度保持不变。
+                ccd_err *= 0.78
+
+        # ---- 20 ms：编码器、速度PI与状态计数（50 Hz） ----
         if tick.flag20:
             tick.flag20 = False
-            ccd.update()        # 749 us，只能放这里，绝不能进 5 ms 分支
-            enc.update()        # 刷新 left / right / speed
+            enc.update()        # 仍然只能20 ms更新一次，保持速度量纲
 
             if ccd.near_kind == ccd.K_OPEN:
                 cross_n += 1
@@ -105,18 +132,11 @@ def run():
                               and cross_n > cfg.CROSS_MAX_N
                               and ramp_t0 is None)
             if ccd.near_kind == ccd.K_OPEN and not cross_too_long:
-                ccd_err = 0.0
                 ccd_lost = 0
             elif ccd.near_ok:
-                if ccd.far_ok:
-                    ccd_err = ((ccd.near_err + cfg.FAR_WEIGHT * ccd.far_err)
-                               / (1.0 + cfg.FAR_WEIGHT))
-                else:
-                    ccd_err = ccd.near_err
                 ccd_lost = 0
             else:
                 ccd_lost += 1
-                ccd_err *= 0.6
                 if ccd_lost > cfg.CCD_LOST_MAX:
                     ccd_err = 0.0
 
@@ -124,6 +144,32 @@ def run():
                 dark_n += 1
             else:
                 dark_n = 0
+
+            # ---- 前瞻入弯刹车 ----
+            # 长直道上ccd_err接近0，速度会一直涨到TARGET_SPEED；等近端
+            # 看到90度弯时，按SPD_DEC_STEP降速已经来不及。这里用远端CCD先
+            # 认出急弯，并允许更大的降速和刹车倾角步长。
+            if cfg.CURVE_ERR > 0:
+                corner_ahead = False
+                if abs(ccd_err) >= cfg.CURVE_ERR:
+                    corner_ahead = True
+                elif ccd.far_ok and abs(ccd.far_err) >= cfg.CURVE_ERR:
+                    corner_ahead = True
+                elif (ccd.near_ok
+                      and (ccd.far_kind == ccd.K_DARK
+                           or ccd.far_kind == ccd.K_NOISE)):
+                    # 近端还在路上但远端已经看不到赛道，基本就是急弯。
+                    # 不把K_OPEN算在内，那是十字而不是弯道。
+                    corner_ahead = True
+
+                if corner_ahead:
+                    curve_n = cfg.CURVE_HOLD_N
+                elif curve_n > 0:
+                    curve_n -= 1
+                braking = curve_n > 0
+            else:
+                curve_n = 0
+                braking = False
 
             # ---- 坡道 ----
             if cfg.RAMP_FAR_W > 0:
@@ -164,10 +210,45 @@ def run():
                 exit_code = 6
                 break
 
-            # ---- 速度环（2026-08-07 两路编码器换新后启用） ----
-            if elapsed < 500:
+            # ---- 开局定时冲坡 ----
+            # 实测0807s中速度目标已经到14，但目标角被抬到12.5后正向PWM
+            # 反而只有约1000，车速仍接近0。这里不再让速度PI产生冲坡角，
+            # 而是直接把目标角向负方向压低，获得更大的正向PWM。
+            boosting = (not boost_done
+                        and cfg.START_BOOST_MS > 0
+                        and elapsed >= cfg.START_HOLD_MS
+                        and elapsed < (cfg.START_HOLD_MS
+                                       + cfg.START_BOOST_MS))
+            if (boosting and cfg.START_BOOST_SPEED > 0
+                    and enc.speed >= cfg.START_BOOST_SPEED):
+                boosting = False
+                boost_done = True
+
+            if boost_prev and not boosting:
+                # 退出固定倾角后，从当前实速重新接管普通0807k速度PI。
+                speed_i = 0.0
+                speed_out = 0.0
+                spd_cmd = cfg.clamp(enc.speed, 0.0, cfg.TARGET_SPEED)
+            boost_prev = boosting
+
+            # 冲坡倾角每20 ms最多增加0.15度；退出时也按同样速度收回，
+            # 避免目标角在一拍内跳变2.5度。
+            if boosting:
+                boost_out += min(0.15, cfg.START_BOOST_ANGLE - boost_out)
+            elif boost_out > 0.0:
+                boost_out -= min(0.15, boost_out)
+
+            # ---- 速度环（普通阶段完全保留0807k逻辑） ----
+            if elapsed < cfg.START_HOLD_MS:
                 spd_cmd = 0.0
                 spd_target = 0.0
+                speed_i = 0.0
+                speed_out = 0.0
+                boost_out = 0.0
+            elif boosting:
+                # 固定倾角冲坡期间暂停速度PI，防止错误方向的输出抵消扭矩。
+                spd_cmd = cfg.START_BOOST_SPEED
+                spd_target = cfg.START_BOOST_SPEED
                 speed_i = 0.0
                 speed_out = 0.0
             elif cfg.SPD_KP == 0.0 and cfg.SPD_KI == 0.0:
@@ -191,6 +272,8 @@ def run():
 
                 if ramp_t0 is not None:
                     spd_req = cfg.TARGET_SPEED
+                elif braking:
+                    spd_req = cfg.CURVE_SPEED
                 elif ccd_lost >= 3:
                     spd_req = cfg.MIN_SPEED
                 else:
@@ -201,8 +284,10 @@ def run():
                 if spd_req > spd_cmd:
                     spd_cmd += min(0.15, spd_req - spd_cmd)
                 else:
-                    spd_cmd -= min(cfg.SPD_DEC_STEP,
-                                   spd_cmd - spd_req)
+                    # 入弯时允许更大的目标速度下降步长。
+                    dec_step = (cfg.CURVE_DEC_STEP if braking
+                                else cfg.SPD_DEC_STEP)
+                    spd_cmd -= min(dec_step, spd_cmd - spd_req)
 
                 spd_target = spd_cmd
                 spd_err_raw = spd_target - enc.speed
@@ -214,8 +299,13 @@ def run():
                 else:
                     spd_err = 0.0
 
-                if ramp_t0 is None and curve_err > 8.0 and speed_i > 0.0:
-                    speed_i *= 0.90
+                if ramp_t0 is None and speed_i > 0.0:
+                    # 刹车时必须更快地放掉直道积起来的积分，
+                    # 否则目标倾角会被积分顶着，刹不下来。
+                    if braking:
+                        speed_i *= 0.75
+                    elif curve_err > 8.0:
+                        speed_i *= 0.90
 
                 if spd_err < 0.0 and speed_i > 0.0:
                     i_step = cfg.clamp(spd_err * 3.0, -8.0, 0.0)
@@ -244,18 +334,23 @@ def run():
                                       -cfg.ANGLE_OFFSET_LIMIT,
                                       cfg.ANGLE_OFFSET_LIMIT)
 
+                brake_step = (cfg.CURVE_BRAKE_STEP if braking
+                              else cfg.SPD_BRAKE_STEP)
                 speed_step = cfg.clamp(speed_raw - speed_out,
-                                       -cfg.SPD_BRAKE_STEP,
+                                       -brake_step,
                                        0.08)
                 speed_out += speed_step
 
             # ---- 限速（2026-08-06 晚） ----
-            if (ramp_t0 is None
+            if (not boosting
+                    and ramp_t0 is None
                     and cfg.SPD_CAP > 0
                     and enc.speed > cfg.SPD_CAP):
                 speed_out = cfg.SPD_BRAKE
 
-            target_angle = cfg.clamp(cfg.MID_ANGLE + speed_out,
+            # 普通0807k仍为MID+speed_out；只有开局冲坡额外减去
+            # boost_out。正数START_BOOST_ANGLE因此会降低目标角、增加正向PWM。
+            target_angle = cfg.clamp(cfg.MID_ANGLE + speed_out - boost_out,
                                      cfg.MIN_ANGLE,
                                      cfg.MID_ANGLE + cfg.ANGLE_OFFSET_LIMIT)
 
@@ -267,8 +362,10 @@ def run():
                 bt_div = 0
                 bt.report(imu.angle, target_angle, ccd_err, basic_pwm,
                           ccd_lost)
-                bt.say('spd %.1f/%.1f %d %d'
-                       % (enc.speed, spd_target, enc.left, enc.right)
+                bt.say('spd %.1f/%.1f %d %d b%d c%d'
+                       % (enc.speed, spd_target, enc.left, enc.right,
+                          1 if boosting else 0,
+                          1 if braking else 0)
                        + cfg.NL)
                 lcd.show_run(imu.angle, target_angle, ccd_err, basic_pwm,
                              ccd_lost)

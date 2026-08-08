@@ -11,7 +11,7 @@ import bt
 import lcd
 import balance
 
-VER = '0807k'
+VER = '0807u'
 
 UP, DOWN, OK, BACK = 0, 1, 2, 3      # KEY1 ~ KEY4
 
@@ -26,7 +26,12 @@ MAIN = ('START  balance', 'PID params', 'IMU calibrate',
 ORDER = ('MID_ANGLE', 'BAL_KP', 'BAL_KD',
          'ANG_KP', 'RATE_KP', 'RATE_KI', 'RATE_LIMIT', 'RATE_I_LIMIT',
          'TARGET_SPEED', 'SPD_KP', 'SPD_KI', 'SPD_I_LIMIT',
-         'SPD_SLOW', 'MIN_SPEED', 'SPD_DEC_STEP', 'SPD_BRAKE_STEP',
+         'SPD_SLOW', 'MIN_SPEED',
+         'START_HOLD_MS', 'START_BOOST_MS',
+         'START_BOOST_SPEED', 'START_BOOST_ANGLE',
+         'SPD_DEC_STEP', 'SPD_BRAKE_STEP',
+         'CURVE_ERR', 'CURVE_SPEED', 'CURVE_DEC_STEP',
+         'CURVE_BRAKE_STEP', 'CURVE_HOLD_N',
          'TURN_KP', 'TURN_KD', 'YAW_HP', 'CROSS_MAX_N',
          'TURN_LIMIT', 'FAR_WEIGHT',
          'CCD_LOST_MAX',

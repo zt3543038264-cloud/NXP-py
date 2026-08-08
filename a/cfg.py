@@ -7,7 +7,7 @@ RAD2DEG  = 57.2958
 DT       = 0.005           # 直立环周期 (s)
 K_FILTER = 0.98            # 互补滤波系数
 
-VER = '0807k'
+VER = '0807u'
 
 PARAM_FILE = '/flash/pid.txt'
 
@@ -30,8 +30,20 @@ DEFAULTS = {
     'SPD_I_LIMIT': 100.0,
     'SPD_SLOW': 0.20,
     'MIN_SPEED': 3.0,
+    # ---- 开局定时冲坡：固定开局坡道不再依赖几何检测 ----
+    'START_HOLD_MS': 300.0,      # 发车后先直立的时间
+    'START_BOOST_MS': 1400.0,    # 高速冲坡持续时间；0=关闭
+    'START_BOOST_SPEED': 14.0,   # 达到这个实际速度可提前结束冲坡；0=只按时间
+    # 正数表示从MID_ANGLE向负方向压低多少度，以增加正向PWM。
+    'START_BOOST_ANGLE': 2.5,
     'SPD_DEC_STEP': 0.35,
     'SPD_BRAKE_STEP': 0.15,
+    # ---- 前瞻入弯减速：长直道接90度弯时提前刹车 ----
+    'CURVE_ERR': 12.0,           # 误差超过它就当急弯将至；0=关闭前瞻刹车
+    'CURVE_SPEED': 5.0,          # 刹车期间的目标速度
+    'CURVE_DEC_STEP': 1.0,       # 刹车时目标速度每20 ms下降量
+    'CURVE_BRAKE_STEP': 0.3,     # 刹车时目标倾角每20 ms回收量
+    'CURVE_HOLD_N': 10.0,        # 误差回落后继续刹车多少个20 ms拍
     'FIRST_ANGLE_OUT': 1.6,
     'ANGLE_OFFSET_LIMIT': 2.0,
     'MIN_ANGLE': -8.0,          # 目标角下限
@@ -80,8 +92,17 @@ LIMITS = {
     'SPD_I_LIMIT':        (0.0, 100000.0),
     'SPD_SLOW':           (0.0, 50.0),
     'MIN_SPEED':          (0.0, 500.0),
+    'START_HOLD_MS':       (0.0, 3000.0),
+    'START_BOOST_MS':      (0.0, 10000.0),
+    'START_BOOST_SPEED':   (0.0, 500.0),
+    'START_BOOST_ANGLE':   (0.0, 10.0),
     'SPD_DEC_STEP':       (0.01, 2.0),
     'SPD_BRAKE_STEP':     (0.01, 1.0),
+    'CURVE_ERR':          (0.0, 60.0),
+    'CURVE_SPEED':        (0.0, 500.0),
+    'CURVE_DEC_STEP':     (0.01, 5.0),
+    'CURVE_BRAKE_STEP':   (0.01, 2.0),
+    'CURVE_HOLD_N':       (0.0, 200.0),
     'FIRST_ANGLE_OUT':    (0.0, 15.0),
     'ANGLE_OFFSET_LIMIT': (0.0, 20.0),
     'MIN_ANGLE':          (-30.0, 0.0),
@@ -135,7 +156,12 @@ RAMP_LEAN = 0.0
 SPD_CAP = 0
 SPD_BRAKE = 0.0
 SPD_I_LIMIT = SPD_SLOW = MIN_SPEED = 0.0
+START_HOLD_MS = START_BOOST_MS = 0
+START_BOOST_SPEED = START_BOOST_ANGLE = 0.0
 SPD_DEC_STEP = SPD_BRAKE_STEP = 0.0
+CURVE_ERR = CURVE_SPEED = 0.0
+CURVE_DEC_STEP = CURVE_BRAKE_STEP = 0.0
+CURVE_HOLD_N = 0
 YAW_HP = 0.0
 
 def clamp(v, lo, hi):
@@ -156,7 +182,11 @@ def apply_params():
     global RAMP_FAR_W, RAMP_LEAN, RAMP_MS, RAMP_N
     global SPD_CAP, SPD_BRAKE
     global SPD_I_LIMIT, SPD_SLOW, MIN_SPEED
+    global START_HOLD_MS, START_BOOST_MS
+    global START_BOOST_SPEED, START_BOOST_ANGLE
     global SPD_DEC_STEP, SPD_BRAKE_STEP
+    global CURVE_ERR, CURVE_SPEED, CURVE_DEC_STEP
+    global CURVE_BRAKE_STEP, CURVE_HOLD_N
     global YAW_HP
     global CROSS_MAX_N
     CROSS_MAX_N        = P['CROSS_MAX_N']
@@ -201,8 +231,17 @@ def apply_params():
     SPD_I_LIMIT        = P['SPD_I_LIMIT']
     SPD_SLOW           = P['SPD_SLOW']
     MIN_SPEED          = P['MIN_SPEED']
+    START_HOLD_MS       = int(P['START_HOLD_MS'])
+    START_BOOST_MS      = int(P['START_BOOST_MS'])
+    START_BOOST_SPEED   = P['START_BOOST_SPEED']
+    START_BOOST_ANGLE   = P['START_BOOST_ANGLE']
     SPD_DEC_STEP       = P['SPD_DEC_STEP']
     SPD_BRAKE_STEP     = P['SPD_BRAKE_STEP']
+    CURVE_ERR          = P['CURVE_ERR']
+    CURVE_SPEED        = P['CURVE_SPEED']
+    CURVE_DEC_STEP     = P['CURVE_DEC_STEP']
+    CURVE_BRAKE_STEP   = P['CURVE_BRAKE_STEP']
+    CURVE_HOLD_N       = int(P['CURVE_HOLD_N'])
     YAW_HP             = P['YAW_HP']
 
 def load_params():

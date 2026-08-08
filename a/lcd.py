@@ -18,7 +18,7 @@ dev.color(0xFFFF, 0x0000)
 dev.mode(2)                 # 0竖 1横 2竖180° 3横180°，装反了改这里
 dev.clear()
 
-VER = '0807k'
+VER = '0807u'
 
 _last = ['', '', '', '', '']
 

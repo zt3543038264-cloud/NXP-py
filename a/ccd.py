@@ -3,7 +3,7 @@ import time
 
 from seekfree import TSL1401
 
-VER = '0807k'          # 改一次就往后挪一格，run.vers() 靠它对表
+VER = '0807u'          # 改一次就往后挪一格，run.vers() 靠它对表
 
 CH_NEAR = 0
 CH_FAR  = 1
@@ -154,7 +154,7 @@ def _cross(d):
     return n
 
 def update():
-    """20 ms 调一次。"""
+    """10 ms 调一次；只解算最新采样。"""
     global near_err, far_err, near_ok, far_ok, near_w, far_w
     global near_kind, far_kind, near_hi
     global near_cross, zebra, zebra_count, _zebra_armed, _zebra_t
@@ -198,7 +198,7 @@ def test(n=40, ticker_on=False):
         tick.start()
     try:
         for i in range(n):
-            time.sleep_ms(200)    # 先等一拍，保证 pit2 至少采过一次
+            time.sleep_ms(200)    # 等待，保证 pit1 已采到新的CCD数据
             update()
             print('near', round(near_err, 1), near_ok, near_w,
                   'k', near_kind,

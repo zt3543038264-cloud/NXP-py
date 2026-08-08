@@ -10,7 +10,7 @@ uart.init(9600, bits=8, parity=None, stop=1)
 NL = chr(10)
 CR = chr(13)
 
-VER = '0807k'
+VER = '0807u'
 
 IDLE_MS = 150      # 最后一个字节之后静默这么久，就当一条命令收完了
 

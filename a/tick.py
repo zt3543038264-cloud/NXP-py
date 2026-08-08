@@ -1,4 +1,4 @@
-# 配置 5 ms 与 20 ms 定时采集和任务标志。
+# 分离5 ms姿态、10 ms CCD与20 ms编码器任务。
 from smartcar import ticker
 
 import imu
@@ -6,12 +6,19 @@ import key
 import enc
 import ccd
 
-flag5  = False
+VER = '0807u'
+
+flag5 = False
+flag10 = False
 flag20 = False
 
 def _cb5(t):
     global flag5
     flag5 = True
+
+def _cb10(t):
+    global flag10
+    flag10 = True
 
 def _cb20(t):
     global flag20
@@ -21,17 +28,24 @@ pit0 = ticker(0)
 pit0.capture_list(imu.dev, key.dev)
 pit0.callback(_cb5)
 
+pit1 = ticker(1)
+pit1.capture_list(ccd.dev)
+pit1.callback(_cb10)
+
 pit2 = ticker(2)
-pit2.capture_list(enc.L, enc.R, ccd.dev)
+pit2.capture_list(enc.L, enc.R)
 pit2.callback(_cb20)
 
 def start():
-    global flag5, flag20
+    global flag5, flag10, flag20
     flag5 = False
+    flag10 = False
     flag20 = False
     pit0.start(5)
+    pit1.start(10)
     pit2.start(20)
 
 def stop():
     pit0.stop()
+    pit1.stop()
     pit2.stop()

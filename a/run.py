@@ -22,9 +22,9 @@ def reload():
     print('NOT cleared, need Ctrl+D:', ' '.join(HARD))
     print('re-run run.py (Alt+Q).')
 
-VER = '0807k'
+VER = '0807u'
 
-WATCH = ('cfg', 'bt', 'ccd', 'lcd', 'balance', 'menu', 'run')
+WATCH = ('cfg', 'bt', 'ccd', 'lcd', 'balance', 'menu', 'tick', 'run')
 
 def vers():
     """打印各模块的 VER，对不上的标 STALE。"""
