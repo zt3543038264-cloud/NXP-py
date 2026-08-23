@@ -6,17 +6,15 @@ from seekfree import IMU660RX
 import cfg
 
 dev = IMU660RX(1)
-
-angle    = 0.0     # 倾角 (deg)
-rate     = 0.0     # pitch 角速度 (deg/s)
+angle = 0.0
+rate = 0.0
 yaw_rate = 0.0
-gy_bias  = 0.0     # pitch 陀螺零偏 (LSB)
-gz_bias  = 0.0     # 偏航陀螺零偏 (LSB)
+gy_bias = 0.0
+gz_bias = 0.0
 
 def calibrate(n=2000):
-    """标定 pitch 与 yaw 两个轴的陀螺零偏。"""
     global gy_bias, gz_bias, angle
-    dev.read()                 # 丢弃第一帧，缓冲区可能还没填
+    dev.read()
     sy = 0
     sz = 0
     for i in range(n):
@@ -30,21 +28,17 @@ def calibrate(n=2000):
     angle = atan2(-d[0], d[2]) * cfg.RAD2DEG
 
 def update():
-    """5 ms 调一次。"""
     global angle, rate, yaw_rate
     d = dev.get()
     dead = cfg.GYRO_DEAD
-
     g = d[4] - gy_bias
     if dead and -dead < g < dead:
         g = 0.0
     rate = g / cfg.GYRO_LSB
-
     z = d[5] - gz_bias
     if dead and -dead < z < dead:
         z = 0.0
     yaw_rate = z / cfg.GYRO_LSB
-
     acc_angle = atan2(-d[0], d[2]) * cfg.RAD2DEG
     k = cfg.K_FILTER
     angle = k * (angle + rate * cfg.DT) + (1.0 - k) * acc_angle

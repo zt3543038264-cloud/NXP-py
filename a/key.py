@@ -1,10 +1,27 @@
 # 读取板载按键并提供按键测试。
-from seekfree import KEY_HANDLER
+from machine import Pin
 
-dev = KEY_HANDLER(5)
+_PINS = ('D13', 'D14', 'D15', 'D17')
 
-START = 0        # KEY1
-STOP  = 1        # KEY2
+class _GPIOKeys:
+    def __init__(self):
+        self._pins = tuple(Pin(name, Pin.IN, Pin.PULL_UP) for name in _PINS)
+        self._last = [0, 0, 0, 0]
+        self._state = [0, 0, 0, 0]
+    def capture(self):
+        for i, pin in enumerate(self._pins):
+            value = 1 if pin.value() == 0 else 0
+            if value == self._last[i]:
+                self._state[i] = value
+            self._last[i] = value
+    def get(self):
+        return self._state
+    def clear(self, idx=None):
+        pass
+
+dev = _GPIOKeys()
+START = 0
+STOP = 1
 
 def pressed(idx):
     return dev.get()[idx]
@@ -16,7 +33,6 @@ def clear(idx=None):
         dev.clear(idx)
 
 def test():
-    """调参第 0 步：四个键逐个按，记下下标、按下时的值、松手后是否自动清零。"""
     import time
     while True:
         dev.capture()

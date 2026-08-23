@@ -3,9 +3,9 @@ from seekfree import MOTOR_CONTROLLER
 
 import cfg
 
-L = MOTOR_CONTROLLER(MOTOR_CONTROLLER.PWM_D6_DIR_D7, 5000,
+L = MOTOR_CONTROLLER(MOTOR_CONTROLLER.PWM_C30_DIR_C31, 5000,
                      duty=0, invert=False)
-R = MOTOR_CONTROLLER(MOTOR_CONTROLLER.PWM_D4_DIR_D5, 5000,
+R = MOTOR_CONTROLLER(MOTOR_CONTROLLER.PWM_C28_DIR_C29, 5000,
                      duty=0, invert=True)
 
 def stop():
@@ -13,7 +13,6 @@ def stop():
     R.duty(0)
 
 def _kick(v, dead):
-    """死区补偿。"""
     if dead <= 0 or v == 0:
         return v
     if v > 0:
@@ -21,15 +20,13 @@ def _kick(v, dead):
     return v - dead
 
 def drive(l, r):
-    """限幅 + 整体极性。"""
     lim = cfg.DUTY_LIMIT
     s = cfg.MOTOR_SIGN
     d = cfg.DEAD_DUTY
     L.duty(int(cfg.clamp(_kick(l, d), -lim, lim)) * s)
     R.duty(int(cfg.clamp(_kick(r, d), -lim, lim)) * s)
 
-def test(duty=800, ms=1000):
-    """调参第 1 步：轮子离地，左右轮各转一秒，看方向。"""
+def test(duty=2000, ms=1000):
     import time
     try:
         print('L (D6/D7) turning now')
@@ -42,4 +39,4 @@ def test(duty=800, ms=1000):
         time.sleep_ms(ms)
         R.duty(0)
     finally:
-        stop()      # Ctrl+C 或任何异常都保证归零
+        stop()

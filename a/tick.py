@@ -1,13 +1,10 @@
-# 分离5 ms姿态、10 ms CCD与20 ms编码器任务。
 from smartcar import ticker
-
 import imu
 import key
 import enc
 import ccd
 
-VER = '0807u'
-
+VER = '0812a'
 flag5 = False
 flag10 = False
 flag20 = False
@@ -25,13 +22,11 @@ def _cb20(t):
     flag20 = True
 
 pit0 = ticker(0)
-pit0.capture_list(imu.dev, key.dev)
+pit0.capture_list(imu.dev)
 pit0.callback(_cb5)
-
 pit1 = ticker(1)
 pit1.capture_list(ccd.dev)
 pit1.callback(_cb10)
-
 pit2 = ticker(2)
 pit2.capture_list(enc.L, enc.R)
 pit2.callback(_cb20)
