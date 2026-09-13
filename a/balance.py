@@ -373,10 +373,20 @@ def run(track=True):
                 bt_div = 0
                 bt.report(imu.angle, target_angle, ccd_err, basic_pwm,
                           ccd_lost)
-                bt.say('spd %.1f/%.1f %d %d c%d'
-                       % (enc.speed, spd_target, enc.left, enc.right,
-                          1 if braking else 0)
-                       + cfg.NL)
+                near_lo = min(ccd.near)
+                near_dn = ccd._dark_n(ccd.near)
+
+                bt.say('s%.1f/%.1f h%d l%d q%d n%d k%d f%d w%d/%d'
+                    % (enc.speed, spd_target,
+                        ccd.near_hi,
+                        near_lo,
+                        ccd.near_hi - near_lo,
+                        near_dn,
+                        ccd.near_kind,
+                        ccd.far_kind,
+                        ccd.near_w,
+                        ccd.far_w)
+                    + cfg.NL)
                 lcd.show_run(imu.angle, target_angle, ccd_err, basic_pwm,
                              ccd_lost)
 

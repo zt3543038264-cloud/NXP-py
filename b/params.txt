@@ -1,0 +1,11 @@
+# PID Parameters
+
+openart_x_target=0
+openart_y_target=0
+openart_x_check=0
+openart_y_check=0
+Movespeed=30
+Wheel_Kp=148
+Wheel_Ki=3
+Wheel_Kd=0
+DeadZone=2
